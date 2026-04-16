@@ -7,7 +7,7 @@
 #include <string.h>
 
 int main(int argc, char *argv[]) {
-    int fd = open("/tmp/file", O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    int fd = open("./a.cpp", O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
     assert(fd >= 0);
     char buffer[20];
     sprintf(buffer, "hello world\n");

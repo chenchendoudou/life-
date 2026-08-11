@@ -35,7 +35,7 @@ void mem_init(void)
 /* 
  * mem_sbrk - Simple model of the sbrk function. Extends the heap 
  *    by incr bytes and returns the start address of the new area. In
- *    this model, the heap cannot be shrunk.
+ *    this model, the heap cannot be shrunk.堆不能被缩小
  */
 void *mem_sbrk(int incr) 
 {

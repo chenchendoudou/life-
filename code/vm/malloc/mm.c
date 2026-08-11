@@ -18,6 +18,7 @@
 
 /* $begin mallocmacros */
 /* Basic constants and macros */
+
 #define WSIZE       4       /* Word and header/footer size (bytes) */ //line:vm:mm:beginconst
 #define DSIZE       8       /* Doubleword size (bytes) */
 #define CHUNKSIZE  (1<<12)  /* Extend heap by this amount (bytes) */  //line:vm:mm:endconst 
@@ -66,12 +67,18 @@ static void checkblock(void *bp);
 int mm_init(void) 
 {
     /* Create the initial empty heap */
+    //申请 16 字节空间，写入 4 个 Word                    
     if ((heap_listp = mem_sbrk(4*WSIZE)) == (void *)-1) //line:vm:mm:begininit
 	return -1;
+       //对齐填充，保证 8 字节对齐 
     PUT(heap_listp, 0);                          /* Alignment padding */
+    //序言页眉，固定 8 字节已分配块
     PUT(heap_listp + (1*WSIZE), PACK(DSIZE, 1)); /* Prologue header */ 
+    //序言页脚，与页眉配对
     PUT(heap_listp + (2*WSIZE), PACK(DSIZE, 1)); /* Prologue footer */ 
+    //尾声页眉，标记堆末尾
     PUT(heap_listp + (3*WSIZE), PACK(0, 1));     /* Epilogue header */
+    //移动堆指针到序言页脚之后
     heap_listp += (2*WSIZE);                     //line:vm:mm:endinit  
 /* $end mminit */
 
@@ -81,6 +88,7 @@ int mm_init(void)
 /* $begin mminit */
 
     /* Extend the empty heap with a free block of CHUNKSIZE bytes */
+    //扩展堆，申请 CHUNKSIZE 字节空间
     if (extend_heap(CHUNKSIZE/WSIZE) == NULL) 
 	return -1;
     return 0;
@@ -91,13 +99,32 @@ int mm_init(void)
  * mm_malloc - Allocate a block with at least size bytes of payload 
  */
 /* $begin mmmalloc */
+/*
+mm_malloc(size)
+    │
+    ├─ ① 堆未初始化？→ mm_init()
+    ├─ ② size == 0？→ 返回 NULL
+    ├─ ③ 计算对齐后的块大小 asize
+    │
+    ├─ ④ 在空闲链表中查找合适的块
+    │     ├─ 找到 → place 放置 → 返回 bp
+    │     └─ 未找到 ↓
+    │
+    └─ ⑤ 扩展堆（max(asize, CHUNKSIZE)）
+          └─ extend_heap → place 放置 → 返回 bp
+*/
 void *mm_malloc(size_t size) 
 {
+    //调整块大小，包括头和尾的开销
     size_t asize;      /* Adjusted block size */
+    //扩展堆的大小，确保有足够空间分配块
+    //如果当前堆大小不足，扩展堆大小为 CHUNKSIZE 字节
     size_t extendsize; /* Amount to extend heap if no fit */
+    //块指针，指向分配的内存块
     char *bp;      
 
 /* $end mmmalloc */
+    //
     if (heap_listp == 0){
 	mm_init();
     }
@@ -107,18 +134,25 @@ void *mm_malloc(size_t size)
 	return NULL;
 
     /* Adjust block size to include overhead and alignment reqs. */
+    // 用户请求 + 页眉 + 页脚 + 对齐填充。                
     if (size <= DSIZE)                                          //line:vm:mm:sizeadjust1
 	asize = 2*DSIZE;                                        //line:vm:mm:sizeadjust2
     else
 	asize = DSIZE * ((size + (DSIZE) + (DSIZE-1)) / DSIZE); //line:vm:mm:sizeadjust3
 
     /* Search the free list for a fit */
+    //查找空闲块
     if ((bp = find_fit(asize)) != NULL) {  //line:vm:mm:findfitcall
-	place(bp, asize);                  //line:vm:mm:findfitplace
+	//place 函数会将找到的空闲块分割：若剩余空间 ≥ 16 字节，则分为已分配块 + 新的空闲块；
+    //否则整个块都分配出去（避免产生太小的残余碎片）
+        place(bp, asize);                  //line:vm:mm:findfitplace
 	return bp;
     }
 
     /* No fit found. Get more memory and place the block */
+    //CHUNKSIZE = 4096 字节，是堆的扩展粒度
+    //若用户请求 asize > 4096，则按实际需要扩展
+    //若用户请求 asize < 4096，仍扩展 4096 字节，避免频繁的系统调用
     extendsize = MAX(asize,CHUNKSIZE);                 //line:vm:mm:growheap1
     if ((bp = extend_heap(extendsize/WSIZE)) == NULL)  
 	return NULL;                                  //line:vm:mm:growheap2
@@ -155,6 +189,7 @@ void mm_free(void *bp)
  * coalesce - Boundary tag coalescing. Return ptr to coalesced block
  */
 /* $begin mmfree */
+//边界标签合并：在释放块时检查前后相邻块状态，将连续空闲块合并成更大的空闲块，消除外部碎片。
 static void *coalesce(void *bp) 
 {
     size_t prev_alloc = GET_ALLOC(FTRP(PREV_BLKP(bp)));
@@ -247,14 +282,34 @@ void mm_checkheap(int verbose)
 
 /* 
  * extend_heap - Extend heap with free block and return its block pointer
- */
+ *
+ * extend_heap(words)
+    │
+    ├─ ① 对齐计算：size = 偶数个 word → 保证 8 字节对齐
+    │
+    ├─ ② 申请内存：mem_sbrk(size)
+    │     失败 → 返回 NULL
+    │     成功 → bp 指向新空间起始
+    │
+    ├─ ③ 初始化新空闲块的页眉和页脚
+    │
+    ├─ ④ 放置新的尾声页眉（覆盖旧的）
+    │
+    └─ ⑤ coalesce(bp)：与前一个空闲块合并，返回合并后的指针
+ * /
 /* $begin mmextendheap */
+//扩展堆：申请内存，初始化新空闲块，合并与前一个空闲块  
+//参数：words - 要扩展的字节数，单位为 word 数
+//返回值：bp - 指向新空间起始的指针，若失败则返回 NULL
+//说明：若申请内存失败，返回 NULL；否则，返回新空间起始地址。
 static void *extend_heap(size_t words) 
 {
     char *bp;
     size_t size;
 
     /* Allocate an even number of words to maintain alignment */
+    //WSIZE = 4，两个 word = 8 字节 = 一个 DSIZE。
+    //强制偶数个 word 等价于强制申请的字节数是 8 的倍数。
     size = (words % 2) ? (words+1) * WSIZE : words * WSIZE; //line:vm:mm:beginextend
     if ((long)(bp = mem_sbrk(size)) == -1)  
 	return NULL;                                        //line:vm:mm:endextend
@@ -274,7 +329,14 @@ static void *extend_heap(size_t words)
  *         and split if remainder would be at least minimum block size
  */
 /* $begin mmplace */
-/* $begin mmplace-proto */
+/* $begin mmplace-proto */            
+//参数：bp - 指向空闲块的指针
+//参数：asize - 请求的内存大小，单位为字节
+//返回值：无
+//说明：将请求的内存大小 asize 放置在空闲块 bp 的起始位置，
+//若空闲块 bp 的大小大于 asize，将 bp 分成两个空闲块，
+//一个大小为 asize，另一个大小为 csize-asize
+//否则，将 bp 放置为 asize 大小的块             
 static void place(void *bp, size_t asize)
      /* $end mmplace-proto */
 {
@@ -299,6 +361,9 @@ static void place(void *bp, size_t asize)
  */
 /* $begin mmfirstfit */
 /* $begin mmfirstfit-proto */
+//参数：asize - 请求的内存大小，单位为字节
+//返回值：若找到合适的空闲块，返回指向该块的指针；否则返回 NULL
+//说明：在空闲链表中查找第一个大小大于等于 asize 的空闲块，若找到则返回该块的指针，否则返回 NULL
 static void *find_fit(size_t asize)
 /* $end mmfirstfit-proto */
 {
@@ -333,7 +398,9 @@ static void *find_fit(size_t asize)
 /* $end mmfirstfit */
 #endif
 }
-
+//参数：bp - 指向块的指针
+//返回值：无
+//说明：打印块的大小、是否已分配、页眉和页脚
 static void printblock(void *bp) 
 {
     size_t hsize, halloc, fsize, falloc;
@@ -353,11 +420,16 @@ static void printblock(void *bp)
 	hsize, (halloc ? 'a' : 'f'), 
 	fsize, (falloc ? 'a' : 'f')); */
 }
-
+//参数：bp - 指向块的指针
+//返回值：无
+//说明：检查块的页眉和页脚是否一致
+//若不一致，打印错误信息
 static void checkblock(void *bp) 
 {
+    //检查 1：8 字节对齐
     if ((size_t)bp % 8)
 	printf("Error: %p is not doubleword aligned\n", bp);
+    //检查 2：页眉和页脚是否一致
     if (GET(HDRP(bp)) != GET(FTRP(bp)))
 	printf("Error: header does not match footer\n");
 }
@@ -365,17 +437,21 @@ static void checkblock(void *bp)
 /* 
  * checkheap - Minimal check of the heap for consistency 
  */
+//参数：verbose - 是否打印堆信息    
+//返回值：无
+//说明：检查堆的页眉和页脚是否一致
+//若不一致，打印错误信息
 void checkheap(int verbose) 
 {
     char *bp = heap_listp;
 
     if (verbose)
 	printf("Heap (%p):\n", heap_listp);
-
+    //检查 1：堆的页眉是否正确
     if ((GET_SIZE(HDRP(heap_listp)) != DSIZE) || !GET_ALLOC(HDRP(heap_listp)))
 	printf("Bad prologue header\n");
     checkblock(heap_listp);
-
+//检查 2：堆的每个块的页眉和页脚是否一致
     for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
 	if (verbose) 
 	    printblock(bp);

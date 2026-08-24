@@ -3,125 +3,148 @@
 #include <string.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
-
+//gcc inet_pton_cd.c -o inet_pton_cd
 /*
- * inet_pton 和 inet_ntop 函数讲解
+ * inet_pton / inet_ntop —— IP 地址字符串与二进制的互转
  *
- * 这两个函数用于 IP 地址在 网络字节序二进制格式 和 点分十进制字符串格式 之间的转换。
- * 它们是比 inet_addr / inet_ntoa 更现代、更通用的函数，支持 IPv4 和 IPv6。
+ * 函数原型:
+ *   int inet_pton(int af, const char *src, void *dst);
+ *     作用: 字符串 → 二进制(网络字节序)
+ *     返回: 1成功, 0字符串无效, -1不支持的af
  *
- * 头文件: <arpa/inet.h>  (Linux), 或 <arpa/inet.h> + <netinet/in.h>
+ *   const char *inet_ntop(int af, const void *src, char *dst, socklen_t size);
+ *     作用: 二进制(网络字节序) → 字符串
+ *     返回: 成功返回dst指针, 失败返回NULL
  *
- * int inet_pton(int af, const char *src, void *dst);
- *   - 将字符串格式(src) 转换为 网络字节序二进制格式(dst)
- *   - af: 地址族，AF_INET(IPv4) 或 AF_INET6(IPv6)
- *   - src: 输入的 IP 字符串，如 "192.168.1.1"
- *   - dst: 输出的二进制地址缓冲区(通常是 struct in_addr 或 struct in6_addr)
- *   - 返回值: 1 成功, 0 字符串无效, -1 错误(af 不支持)
- *
- * const char *inet_ntop(int af, const void *src, char *dst, socklen_t size);
- *   - 将网络字节序二进制格式(src) 转换为 字符串格式(dst)
- *   - af: 地址族，AF_INET(IPv4) 或 AF_INET6(IPv6)
- *   - src: 输入的二进制地址
- *   - dst: 输出的字符串缓冲区
- *   - size: dst 缓冲区大小，IPv4 至少 16 字节(INET_ADDRSTRLEN)，IPv6 至少 46 字节(INET6_ADDRSTRLEN)
- *   - 返回值: 成功返回 dst 指针，失败返回 NULL
+ * 头文件: <arpa/inet.h>
  */
 
-int main()
+/* 辅助函数：打印IPv4二进制内容 */
+void print_ipv4_binary(const char *label, struct in_addr *addr)
 {
-    /* ========== 1. inet_pton: 字符串 -> 二进制 ========== */
-    printf("====== 1. inet_pton: 字符串 IP  ->  二进制网络字节序\n");
+    unsigned char *p = (unsigned char *)addr;
+    printf("%s: %02X %02X %02X %02X\n", label, p[0], p[1], p[2], p[3]);
+}
 
-    struct in_addr ipv4_addr;
-    const char *ipv4_str = "www.baidu.com"; /* 也可以使用 "192.168.1.100" */
+int main(void)
+{
+    /* ===== 例子1: inet_pton 基础用法 ===== */
+    printf("===== 例子1: inet_pton 基础用法 =====\n\n");
 
-    int ret = inet_pton(AF_INET, ipv4_str, &ipv4_addr);
-    if (ret == 1)
-        printf("  IPv4 转换成功: \"%s\"\n", ipv4_str);
-    else if (ret == 0)
-        printf("  IPv4 转换失败: 字符串无效 \"%s\"\n", ipv4_str);
-    else
-        printf("  IPv4 转换失败: af 不支持\n");
+    struct in_addr addr1;
 
-    /* 查看二进制内容(以十六进制打印网络字节序) */
-    unsigned char *p = (unsigned char *)&ipv4_addr;
-    printf("  二进制网络字节序(十六进制): %02x %02x %02x %02x\n",
-           p[0], p[1], p[2], p[3]);
+    /* "192.168.1.1" → 网络字节序二进制 */
+    int ret = inet_pton(AF_INET, "192.168.1.1", &addr1);
+    printf("inet_pton(\"192.168.1.1\") 返回: %d\n", ret);
+    print_ipv4_binary("  二进制结果", &addr1);
+    printf("  (网络字节序: 192 168 1 1 → C0 A8 01 01)\n\n");
 
-    /* ========== 2. inet_ntop: 二进制 -> 字符串 ========== */
-    printf("\n====== 2. inet_ntop: 二进制网络字节序  ->  字符串 IP\n");
+    /* ===== 例子2: inet_ntop 基础用法 ===== */
+    printf("===== 例子2: inet_ntop 基础用法 =====\n\n");
 
-    char ip_str[INET_ADDRSTRLEN]; /* INET_ADDRSTRLEN = 16 */
-    const char *result = inet_ntop(AF_INET, &ipv4_addr, ip_str, sizeof(ip_str));
-    if (result != NULL)
-        printf("  转换结果: %s\n", ip_str);
-    else
-        printf("  转换失败\n");
+    char ip_str[INET_ADDRSTRLEN];
 
-    /* ========== 3. 演示 IPv6 ========== */
-    printf("\n====== 3. IPv6 转换演示\n");
+    /* 网络字节序二进制 → 点分十进制字符串 */
+    const char *result = inet_ntop(AF_INET, &addr1, ip_str, sizeof(ip_str));
+    printf("inet_ntop 结果: %s\n", ip_str);
+    printf("  返回值与ip_str相同: %s\n", result == ip_str ? "是" : "否");
+    printf("  (INET_ADDRSTRLEN = %d, 足够存放 \"255.255.255.255\" + '\\0')\n\n",
+           INET_ADDRSTRLEN);
 
-    struct in6_addr ipv6_addr;
-    const char *ipv6_str = "2001:db8::1";
+    /* ===== 例子3: 常用IP地址转换 ===== */
+    printf("===== 例子3: 常用IP地址转换 =====\n\n");
 
-    ret = inet_pton(AF_INET6, ipv6_str, &ipv6_addr);
-    if (ret == 1)
-        printf("  IPv6 转换成功: \"%s\"\n", ipv6_str);
-    else
-        printf("  IPv6 转换失败, ret=%d\n", ret);
+    const char *ips[] = {
+        "0.0.0.0",
+        "127.0.0.1",
+        "192.168.1.100",
+        "255.255.255.255",
+        NULL
+    };
 
-    char ipv6_str_buf[INET6_ADDRSTRLEN]; /* INET6_ADDRSTRLEN = 46 */
-    result = inet_ntop(AF_INET6, &ipv6_addr, ipv6_str_buf, sizeof(ipv6_str_buf));
-    if (result != NULL)
-        printf("  转换回字符串: %s\n", ipv6_str_buf);
-    else
-        printf("  转换失败\n");
+    for (int i = 0; ips[i] != NULL; i++) {
+        struct in_addr addr;
+        inet_pton(AF_INET, ips[i], &addr);
 
-    /* ========== 4. 演示错误处理 ========== */
-    printf("\n====== 4. 错误处理演示\n");
+        char buf[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &addr, buf, sizeof(buf));
 
-    /* 无效的 IPv4 字符串 */
-    struct in_addr bad_addr;
-    ret = inet_pton(AF_INET, "999.999.999.999", &bad_addr);
-    printf("  inet_pton(\"999.999.999.999\") 返回: %d (0 表示字符串无效)\n", ret);
+        unsigned char *p = (unsigned char *)&addr;
+        printf("  %-18s → [ %02X %02X %02X %02X ] → %s\n",
+               ips[i], p[0], p[1], p[2], p[3], buf);
+    }
+    printf("\n");
 
-    /* 缓冲区太小 */
-    char small_buf[5];
-    result = inet_ntop(AF_INET, &ipv4_addr, small_buf, sizeof(small_buf));
-    printf("  inet_ntop 缓冲区太小(%zu字节) 返回: %p (NULL表示缓冲不够)\n",
-           sizeof(small_buf), (void *)result);
+    /* ===== 例子4: 错误处理 ===== */
+    printf("===== 例子4: 错误处理 =====\n\n");
 
-    /* ========== 5. 实际应用: 将 IP 字符串存入 socket 结构体 ========== */
-    printf("\n====== 5. 实际应用: 构建 socket 地址结构\n");
+    struct in_addr bad;
+    char small[5];
 
-    struct sockaddr_in server_addr;
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(8080);
+    ret = inet_pton(AF_INET, "999.999.999.999", &bad);
+    printf("无效IP \"999.999.999.999\": ret=%d (0=字符串无效)\n", ret);
 
-    const char *server_ip = "127.0.0.1";
-    if (inet_pton(AF_INET, server_ip, &server_addr.sin_addr) != 1)
-    {
-        fprintf(stderr, "  无效的 IP 地址: %s\n", server_ip);
-        exit(EXIT_FAILURE);
+    ret = inet_pton(AF_INET, "", &bad);
+    printf("空字符串: ret=%d\n", ret);
+
+    result = inet_ntop(AF_INET, &addr1, small, sizeof(small));
+    printf("缓冲区太小(5字节): result=%p (NULL=缓冲不足)\n", (void *)result);
+    printf("\n");
+
+    /* ===== 例子5: 实际构建 socket 地址结构 ===== */
+    printf("===== 例子5: 构建 socket 地址结构 =====\n\n");
+
+    struct sockaddr_in server;
+    memset(&server, 0, sizeof(server));
+
+    server.sin_family = AF_INET;
+    server.sin_port = htons(8080);
+
+    /* 用户输入的IP → 存入sockaddr_in */
+    if (inet_pton(AF_INET, "127.0.0.1", &server.sin_addr) != 1) {
+        fprintf(stderr, "IP转换失败\n");
+        exit(1);
     }
 
-    char debug_ip[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &server_addr.sin_addr, debug_ip, sizeof(debug_ip));
-    printf("  sockaddr_in: %s:%d\n", debug_ip, ntohs(server_addr.sin_port));
+    /* 调试时把二进制地址打回字符串 */
+    char debug[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &server.sin_addr, debug, sizeof(debug));
+    printf("服务器地址: %s:%d\n", debug, ntohs(server.sin_port));
+    printf("  sin_family = AF_INET (%d)\n", server.sin_family);
+    printf("  sin_port   = %d (网络字节序: %04X)\n",
+           ntohs(server.sin_port), server.sin_port);
+    print_ipv4_binary("  sin_addr  ", &server.sin_addr);
+    printf("\n");
+
+    /* ===== 例子6: IPv6 支持 ===== */
+    printf("===== 例子6: IPv6 支持 =====\n\n");
+
+    struct in6_addr ipv6;
+    ret = inet_pton(AF_INET6, "2001:db8::1", &ipv6);
+    printf("inet_pton(\"2001:db8::1\"): ret=%d\n", ret);
+
+    char ipv6_str[INET6_ADDRSTRLEN];
+    result = inet_ntop(AF_INET6, &ipv6, ipv6_str, sizeof(ipv6_str));
+    printf("inet_ntop 结果: %s\n", ipv6_str);
+    printf("  (INET6_ADDRSTRLEN = %d)\n\n", INET6_ADDRSTRLEN);
+
+    /* ===== 例子7: 与旧函数对比 ===== */
+    printf("===== 例子7: 与旧函数对比 =====\n\n");
+
+    /* 旧函数 inet_addr (已废弃) */
+    unsigned long old = inet_addr("127.0.0.1");
+    printf("inet_addr(\"127.0.0.1\") = %lu (主机字节序, 已废弃)\n", old);
+
+    /* 新函数 inet_pton */
+    struct in_addr addr_new;
+    inet_pton(AF_INET, "127.0.0.1", &addr_new);
+    printf("inet_pton(\"127.0.0.1\")  = %u (网络字节序, 推荐)\n",
+           addr_new.s_addr);
+
+    printf("\n===== 总结 =====\n");
+    printf("inet_pton: 人读字符串 → 网络传输二进制 (发送前用)\n");
+    printf("inet_ntop: 网络传输二进制 → 人读字符串 (调试时用)\n");
+    printf("两者都支持 IPv4/IPv6, 是 inet_addr/inet_ntoa 的替代品\n");
 
     return 0;
 }
-
-/*
- * 编译运行:
- *   gcc inet_pton.c -o inet_pton
- *   ./inet_pton
- *
- * 关键要点总结:
- * 1. inet_pton: 字符串 -> 二进制网络字节序, 用于接收用户输入的 IP
- * 2. inet_ntop: 二进制网络字节序 -> 字符串, 用于调试日志打印 IP
- * 3. 这两个函数支持 IPv4 和 IPv6, 可替代旧的 inet_addr/inet_ntoa
- * 4. 二进制格式就是网络传输用的字节序, 不是主机字节序
- */

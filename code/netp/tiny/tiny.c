@@ -43,7 +43,15 @@ int main(int argc, char **argv)
 void doit(int fd) 
 {
     int is_static;
+    // 用于存储文件信息
     struct stat sbuf;
+    //变量定义  
+    // buf: 用于存储请求行和请求头
+    // method: 用于存储请求方法
+    // uri: 用于存储请求URI
+    // version: 用于存储请求版本
+    // filename: 用于存储文件名
+    // cgiargs: 用于存储CGI参数
     char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
     char filename[MAXLINE], cgiargs[MAXLINE];
     rio_t rio;
@@ -60,7 +68,10 @@ void doit(int fd)
     read_requesthdrs(&rio);                              //line:netp:doit:readrequesthdrs
 
     /* Parse URI from GET request */
+    // 解析URI, 并将结果存储在filename和cgiargs中
     is_static = parse_uri(uri, filename, cgiargs);       //line:netp:doit:staticcheck
+    // 检查文件是否存在
+    // 如果文件不存在, 则返回404错误
     if (stat(filename, &sbuf) < 0) {                     //line:netp:doit:beginnotfound
 	clienterror(fd, filename, "404", "Not found",
 		    "Tiny couldn't find this file");
@@ -90,6 +101,10 @@ void doit(int fd)
  * read_requesthdrs - read and parse HTTP request headers
  */
 /* $begin read_requesthdrs */
+// 从rio_buf中读取请求头, 直到遇到空行  
+// 并打印出每个请求头
+// 注意: 这里没有解析请求头, 只是简单地打印出每个请求头
+// 实际应用中, 应该解析请求头, 并根据请求头执行不同的操作       
 void read_requesthdrs(rio_t *rp) 
 {
     char buf[MAXLINE];
@@ -108,10 +123,16 @@ void read_requesthdrs(rio_t *rp)
  *             return 0 if dynamic content, 1 if static
  */
 /* $begin parse_uri */
+// 解析URI, 并将结果存储在filename和cgiargs中   
+// 注意: 这里没有解析请求头, 只是简单地打印出每个请求头
+// 实际应用中, 应该解析请求头, 并根据请求头执行不同的操作   
+// 返回值: 0 表示动态内容, 1 表示静态内容
 int parse_uri(char *uri, char *filename, char *cgiargs) 
 {
     char *ptr;
 
+    // 如果URI中不包含cgi-bin, 则认为是静态内容
+    // 如果URI中包含cgi-bin, 则认为是动态内容   
     if (!strstr(uri, "cgi-bin")) {  /* Static content */ //line:netp:parseuri:isstatic
 	strcpy(cgiargs, "");                             //line:netp:parseuri:clearcgi
 	strcpy(filename, ".");                           //line:netp:parseuri:beginconvert1

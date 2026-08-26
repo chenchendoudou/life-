@@ -49,9 +49,9 @@ int main(void)
     /* 4. 使用 poll 同时监听 stdin(0) 和 sockfd */
     struct pollfd fds[2];
     fds[0].fd = 0;              // stdin
-    fds[0].events = POLLIN;
+    fds[0].events = POLLIN;//    监听stdin是否有数据可读
     fds[1].fd = sockfd;         // server socket
-    fds[1].events = POLLIN;
+    fds[1].events = POLLIN;//   监听sockfd是否有数据可读
 
     char buf[1024];
 

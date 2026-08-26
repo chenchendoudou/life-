@@ -1,6 +1,6 @@
 /* $begin statcheck */
 #include "csapp.h"
-
+//gcc -I../include statcheck.c ../src/csapp.c -o statcheck
 int main (int argc, char **argv) 
 {
     struct stat stat;

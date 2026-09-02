@@ -214,6 +214,9 @@ NOTES:
  *   最大运算符数: 14
  *   Rating: 1
  *   难度: 1
+ * 思路：
+ *       一、得到x是1的位，y是0的位  x  & ~y
+ *       二、得到x是0的位，y是1的位  ~x &  y
  */
 int bitXor(int x, int y) {
   return ~( ~(x & ~y) & ~(~x & y) );
@@ -227,10 +230,11 @@ int bitXor(int x, int y) {
  *   最大运算符数: 4
  *   Rating: 1
  *   难度: 1
+ * 思路：
  */
 int tmin(void) {
 
-  return 2;
+  return 0x1 << 31;
 
 }
 //2
@@ -246,7 +250,7 @@ int tmin(void) {
  *   难度: 1
  */
 int isTmax(int x) {
-  return 2;
+  return !((~(x + 1)) ^ x) & !!(x + 1);
 }
 /* 
  * allOddBits - return 1 if all odd-numbered bits in word set to 1
@@ -263,7 +267,9 @@ int isTmax(int x) {
  *   难度: 2
  */
 int allOddBits(int x) {
-  return 2;
+   int mask = 0xaa + (0xaa << 8);
+   mask = mask + (mask << 16);
+  return !((x & mask) ^mask);
 }
 /* 
  * negate - return -x 
@@ -277,8 +283,16 @@ int allOddBits(int x) {
  *   Rating: 2
  *   难度: 2
  */
+/**
+ * x       : 0000 0101
+ * ~x      : 1111 1011
+ * x + ~x  : 1111 1111  =  -1 （补码中全 1 就是 -1）
+ * 所以：x + ~x = -1, 移项得 ~x = -1 - x
+ * 两边加 1：~x + 1 = -x
+ */
+
 int negate(int x) {
-  return 2;
+  return ~x + 1;
 }
 //3
 /* 
@@ -298,7 +312,7 @@ int negate(int x) {
  *   难度: 3
  */
 int isAsciiDigit(int x) {
-  return 2;
+  return (!((x+(~0x30+1)) & (0x01 << 31))) & (!((0x39 +(~x) + 1) & (0x01 << 31)));
 }
 /* 
  * conditional - same as x ? y : z 
@@ -313,7 +327,8 @@ int isAsciiDigit(int x) {
  *   难度: 3
  */
 int conditional(int x, int y, int z) {
-  return 2;
+  int mask = ~(!x) + 1;
+  return (~mask & y) | (mask & z);
 }
 /* 
  * isLessOrEqual - if x <= y  then return 1, else return 0 
@@ -328,7 +343,7 @@ int conditional(int x, int y, int z) {
  *   难度: 3
  */
 int isLessOrEqual(int x, int y) {
-  return 2;
+  return !(((y+(~x+1)) >> 31) & 0x01);
 }
 //4
 /* 
@@ -344,8 +359,10 @@ int isLessOrEqual(int x, int y) {
  *   Rating: 4 
  *   难度: 4 
  */
+
+//规律：x | -x 把 x 最低位那个 1 以及它上面的所有位，全部变成了 1。
 int logicalNeg(int x) {
-  return 2;
+  return ~( (~0x01 + 1) | x);
 }
 /* howManyBits - return the minimum number of bits required to represent x in
  *             two's complement

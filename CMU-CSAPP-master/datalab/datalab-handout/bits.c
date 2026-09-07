@@ -219,7 +219,9 @@ NOTES:
  *       二、得到x是0的位，y是1的位  ~x &  y
  */
 int bitXor(int x, int y) {
-  return ~( ~(x & ~y) & ~(~x & y) );
+  //return ~( ~(x & ~y) & ~(~x & y) );
+  //return ~((x&y) | ((~x)&(~y)));
+  return ~(x&y) & ~ ((~x)&(~y));
 }
 /* 
  * tmin - return minimum two's complement integer 
@@ -250,6 +252,7 @@ int tmin(void) {
  *   难度: 1
  */
 int isTmax(int x) {
+   
   return !((~(x + 1)) ^ x) & !!(x + 1);
 }
 /* 
@@ -269,7 +272,7 @@ int isTmax(int x) {
 int allOddBits(int x) {
    int mask = 0xaa + (0xaa << 8);
    mask = mask + (mask << 16);
-  return !((x & mask) ^mask);
+  return !((x & mask) ^ mask);
 }
 /* 
  * negate - return -x 
@@ -362,7 +365,7 @@ int isLessOrEqual(int x, int y) {
 
 //规律：x | -x 把 x 最低位那个 1 以及它上面的所有位，全部变成了 1。
 int logicalNeg(int x) {
-  return ~( (~0x01 + 1) | x);
+   return ((x | (~x + 1)) >> 31) + 1;
 }
 /* howManyBits - return the minimum number of bits required to represent x in
  *             two's complement
@@ -387,7 +390,44 @@ int logicalNeg(int x) {
  *  难度: 4
  */
 int howManyBits(int x) {
-  return 0;
+// y 的最高位 1 的位置即为 p
+    int y = x ^ (x >> 1);
+    int n = 0;          // 用于累加 p 的值
+
+    // 二分法查找 y 中最高位 1 的位置（即计算 y 的二进制位数减 1）
+    int cond;
+    int is_zero;
+
+    // 检查高 16 位
+    cond = !!(y >> 16);
+    n += cond << 4;
+    y >>= cond << 4;
+
+    // 检查高 8 位
+    cond = !!(y >> 8);
+    n += cond << 3;
+    y >>= cond << 3;
+
+    // 检查高 4 位
+    cond = !!(y >> 4);
+    n += cond << 2;
+    y >>= cond << 2;
+
+    // 检查高 2 位
+    cond = !!(y >> 2);
+    n += cond << 1;
+    y >>= cond << 1;
+
+    // 检查高 1 位
+    cond = !!(y >> 1);
+    n += cond;
+    y >>= cond;
+
+    // 此时 n 就是 p（最高位 1 的索引）
+    // 一般情况需要 p + 2 位
+    // 若 y == 0（即 x 为 0 或 -1），则需要 1 位，因此减去 !y
+    is_zero = !y;
+    return n + 2 - is_zero;
 }
 //float
 /* 

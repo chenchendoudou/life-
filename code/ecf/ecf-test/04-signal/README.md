@@ -32,6 +32,7 @@
 | `procmask2.c` | sigprocmask 阻塞/解除阻塞的复杂演示 |
 | `counterprob.c` | 思考题：信号处理中的全局计数器 |
 | `restart.c` | SA_RESTART：慢系统调用被信号打断后自动重启 |
+| `pkill_term.c` | 收到 `pkill` 默认发的 SIGTERM 时打印信息再退出（`pkill -9` 不可捕获，用 SIGTERM 替代） |
 
 ---
 

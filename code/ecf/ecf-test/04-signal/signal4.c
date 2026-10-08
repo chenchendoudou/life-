@@ -1,10 +1,24 @@
+/**
+ * @file signal4.c
+ * @brief 用 csapp.h 的 Signal() 包装（自动带 SA_RESTART）
+ * @details
+ *   与 signal3 相比，这里用 csapp.h 的 Signal() 替代 signal()，
+ *   Signal() 内部用 sigaction 且设置 SA_RESTART，所以 read 被信号
+ *   打断后会自动重启，main 里不需要 while 循环。
+ *
+ * @note 参考 CS:APP §8.5
+ */
 /* $begin signal4 */
 #include "csapp.h"
 
-void handler2(int sig) 
+/**
+ * @brief SIGCHLD handler：循环回收所有已退出的子进程
+ * @param sig 收到的信号编号
+ */
+void handler2(int sig)
 {
     pid_t pid;
-  
+
     while ((pid = waitpid(-1, NULL, 0)) > 0)
 	printf("Handler reaped child %d\n", (int)pid);
     if (errno != ECHILD)
@@ -13,7 +27,11 @@ void handler2(int sig)
     return;
 }
 
-int main() 
+/**
+ * @brief 主函数
+ * @return 0（不会到达，最后进入死循环）
+ */
+int main()
 {
     int i, n;
     char buf[MAXBUF];

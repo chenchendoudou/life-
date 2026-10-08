@@ -75,6 +75,7 @@ BINS += 04-signal/procmask1
 BINS += 04-signal/procmask2
 BINS += 04-signal/counterprob
 BINS += 04-signal/restart
+BINS += 04-signal/pkill_term
 
 BINS += 05-setjmp/setjmp
 
@@ -95,6 +96,7 @@ BINS += 06-shellex/shellex
 # 04-signal/procmask1,2          : § 8.5      sigprocmask 演示
 # 04-signal/counterprob          : § 8.5      信号与全局计数器
 # 04-signal/restart              : § 8.5      SA_RESTART
+# 04-signal/pkill_term           : § 8.5      SIGTERM 处理（pkill -9 不可捕获，用 SIGTERM 替代）
 # 05-setjmp/setjmp               : § 8.6      非局部跳转
 # 06-shellex/shellex             : § 8.4+8.5  综合：100 行简易 shell
 

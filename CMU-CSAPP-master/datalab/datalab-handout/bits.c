@@ -252,7 +252,6 @@ int tmin(void) {
  *   难度: 1
  */
 int isTmax(int x) {
-   
   return !((~(x + 1)) ^ x) & !!(x + 1);
 }
 /* 
@@ -427,7 +426,7 @@ int howManyBits(int x) {
     // 一般情况需要 p + 2 位
     // 若 y == 0（即 x 为 0 或 -1），则需要 1 位，因此减去 !y
     is_zero = !y;
-    return n + 2 - is_zero;
+    return n + 2 + (~is_zero+1);
 }
 //float
 /* 

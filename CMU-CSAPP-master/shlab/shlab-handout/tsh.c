@@ -210,8 +210,8 @@ void eval(char *cmdline)
              */
             if (execve(argv[0], argv, environ) < 0)
             { // 执行命令失败
-                printf("%s: command not found\n", argv[0]);
-                exit(1);
+                printf("%s: Command not found\n", argv[0]);
+                exit(0);
             }
         }
         // 父进程
@@ -225,33 +225,7 @@ void eval(char *cmdline)
         }
         else
         {
-            int status;
-            //__Linux 实际行：waitpid 拿到 zombie 立即返回
-            // → handler 后跑 ✅ __所以你的代码不会出问题__
-            // ——`deletejob` 一定在 handler 之前执行
-            // ✅ __handler 跑时拿到 ECHILD__（zombie 已被 waitpid 抢）—— while 不进
-
-            waitpid(pid, &status, 0); // 不需要 < 0 检查，因为 SA_RESTART 保证不返回 EINTR
-
-            if (WIFSIGNALED(status))
-            {
-                struct job_t *job = getjobpid(jobs, pid);
-                printf("Job [%d] (%d) terminated by signal %d\n",
-                       job->jid, pid, WTERMSIG(status));
-            }
-            else if (WIFSTOPPED(status))
-            {
-                struct job_t *job = getjobpid(jobs, pid);
-                printf("Job [%d] (%d) stopped by signal %d\n",
-                       job->jid, pid, WSTOPSIG(status));
-                job->state = ST;
-                // 不 deletejob, 停止的 job 保留
-                // 不 return, 让 eval 正常返回
-            } //
-
-            /* 前台任务: waitpid 抢在 handler 之前 reap 了子进程,
-             * 这里必须自己 deletejob, 否则 jobs 列表残留 */
-            deletejob(jobs, pid);
+            waitfg(pid);
         }
     }
     return;
@@ -365,11 +339,11 @@ void do_bgfg(char **argv)
 
     if (argv[1][0] == '%')
     {
-        jid = atoi(argv[1][1]);
+        jid = atoi(argv[1] + 1);
         job = getjobjid(jobs, jid);
         if (job == NULL)
         {
-            printf("%s: job %d not found\n", argv[0], jid);
+            printf("%s: No such job\n", argv[1]);
             return;
         }
     }
@@ -379,17 +353,17 @@ void do_bgfg(char **argv)
         job = getjobpid(jobs, pid);
         if (job == NULL)
         {
-            printf("%s: job %d not found\n", argv[0], pid);
+            printf("(%s): No such process\n", argv[1]);
             return;
         }
     }
     else
     {
-        printf("%s: invalid argument\n", argv[0]);
+        printf("%s: argument must be a PID or %%jobid\n", argv[0]);
         return;
     }
 
-    kill(-(job->jid), SIGCONT);
+    kill(-(job->pid), SIGCONT);
 
     if (strcmp(argv[0], "fg") == 0)
     {
@@ -399,7 +373,7 @@ void do_bgfg(char **argv)
     else
     {
         job->state = BG;
-        printf("[%d] (%d) %s", job->jid, pid, job->cmdline);
+        printf("[%d] (%d) %s", job->jid, job->pid, job->cmdline);
     }
     return;
 }
@@ -413,7 +387,7 @@ void waitfg(pid_t pid)
     sigemptyset(&mask);
     while (fgpid(jobs) == pid)
     {
-        sigsuspend(&mask);
+        sigsuspend(&mask);//mask鏄┖闆嗭紝绛夊緟鎵€鏈変俊锟??
     }
     return;
 }
@@ -440,20 +414,25 @@ void sigchld_handler(int sig)
     {
         if (WIFEXITED(status)) // 子进程正常退出
         {
-            printf("Jobaped pid=%d status=%d\n", pid, status);
             deletejob(jobs, pid); // 从作业列表中删除
         }
         else if (WIFSIGNALED(status)) // 子进程被信号终止
         {
             struct job_t *job = getjobpid(jobs, pid); // 获取作业列表中的子进程
-            printf("Job [%d] (%d) terminated by signal %d\n", job->jid, pid, WTERMSIG(status));
+            if (job != NULL)
+            {
+                printf("Job [%d] (%d) terminated by signal %d\n", job->jid, pid, WTERMSIG(status));
+            }
             deletejob(jobs, pid); // 从作业列表中删除
         }
         else if (WIFSTOPPED(status)) // 子进程被信号停止
         {
             struct job_t *job = getjobpid(jobs, pid);
-            printf("Job [%d] (%d) stopped by signal %d\n", job->jid, pid, WSTOPSIG(status));
-            job->state = ST; // 子进程被信号停止
+            if (job != NULL)
+            {
+                printf("Job [%d] (%d) stopped by signal %d\n", job->jid, pid, WSTOPSIG(status));
+                job->state = ST; // 子进程被信号停止
+            }
         }
     }
     errno = olderrno;

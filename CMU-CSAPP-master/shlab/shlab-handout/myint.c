@@ -1,6 +1,6 @@
-/* 
+/*
  * myint.c - Another handy routine for testing your tiny shell
- * 
+ *
  * usage: myint <n>
  * Sleeps for <n> seconds and sends SIGINT to itself.
  *
@@ -12,25 +12,26 @@
 #include <sys/wait.h>
 #include <signal.h>
 
-int main(int argc, char **argv) 
+int main(int argc, char **argv)
 {
     int i, secs;
-    pid_t pid; 
+    pid_t pid;
 
-    if (argc != 2) {
-	fprintf(stderr, "Usage: %s <n>\n", argv[0]);
-	exit(0);
+    if (argc != 2)
+    {
+        fprintf(stderr, "Usage: %s <n>\n", argv[0]);
+        exit(0);
     }
-    secs = atoi(argv[1]);
+    secs = atoi(argv[1]);//将命令行参数转换为整数
 
-    for (i=0; i < secs; i++)
-       sleep(1);
-	
-    pid = getpid(); 
+    for (i = 0; i < secs; i++)//循环secs次
+        sleep(1);//每次循环1秒  
 
+    pid = getpid();//获取当前进程ID
+
+    // 发送SIGINT信号给当前进程
     if (kill(pid, SIGINT) < 0)
-       fprintf(stderr, "kill (int) error");
+        fprintf(stderr, "kill (int) error");
 
     exit(0);
-
 }

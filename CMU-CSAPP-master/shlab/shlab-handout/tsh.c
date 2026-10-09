@@ -170,27 +170,76 @@ int main(int argc, char **argv)
  */
 void eval(char *cmdline)
 {
-    char *argv[MAXARGS];
-    char buf[MAXARGS];
-    strcpy(buf, cmdline);
-    parseline(buf,argv);
-    //buf�������У�argv�������в�������
-    if(argv[0]==NULL) return;  //��������ֱ�ӷ���
-    if(!builtin_cmd(argv)){//�����ڽ�����
-        pid_t pid;  
-        if((pid=fork())<0){
-            unix_error("fork error");
-        }
-        else if(pid==0){
-            execvp(argv[0],argv);
-            unix_error(argv[0]);
-        }
-        else{
-            waitfg(pid);
-        }
+    char *argv[MAXARGS]; // 命令行参数数组
+    int bg;              // 是否后台运行
+    pid_t pid;           // 子进程PID
+
+    sigset_t maks_all, prev;
+
+    bg = parseline(cmdline, argv); // 解析命令行
+    if (argv[0] == NULL)
+    {
+        return;
     }
-    else{
-        do_bgfg(argv);
+    sigfillset(&maks_all);
+
+    if (!builtin_cmd(argv))
+    { // 不是内置命令
+
+        sigprocmask(SIG_BLOCK, &maks_all, &prev); // 阻塞所有信号
+
+        // 创建子进程
+        pid = fork();
+        if (pid == 0)
+        { // 子进程
+
+            sigprocmask(SIG_SETMASK, &prev, NULL); // 恢复信号掩码
+            setpgid(0, 0);                         // 将**当前进程**，新建一个进程组，**进程组 ID = 当前进程的 PID**，当前进程成为**进程组组长**。
+
+            /**
+             * `environ` **是全局变量，但不是标准 C 库规定的标准全局变量，是 Linux/glibc 提供的扩展**。
+             *
+             * 重点区分三个东西，很多写 execve 的同学搞混：
+             * 1. `main` 的第三个参数：`int main(int argc, char *argv[], char *envp[])`
+             * 2. 全局变量：`extern char **environ;`
+             * 3. `execve` 的第三个参数：就是环境变量数组。
+             *
+             * ## 二者关系
+             * - 如果你启动程序时，main 拿到`envp`，它**本质就是同一个数组**，和全局`environ`指向同一块内存。
+             * - 即使你的 main**不写第三个 envp 参数**，你依然可以访问全局`environ`拿到环境变量。
+             */
+            if (execve(argv[0], argv, environ) < 0)
+            { // 执行命令失败
+                printf("%s: command not found\n", argv[0]);
+                exit(1);
+            }
+        }
+        // 父进程
+        addjob(jobs, pid, bg ? BG : FG, cmdline); // 添加到作业列表
+        sigprocmask(SIG_SETMASK, &prev, NULL);    // 恢复信号掩码
+
+        if (bg)
+        {
+
+            printf("[%d] (%d) %s", pid2jid(pid), pid, cmdline);
+        }
+        else
+        {
+            int status;
+            //__Linux 实际行：waitpid 拿到 zombie 立即返回 
+            //→ handler 后跑 ✅ __所以你的代码不会出问题__
+            //——`deletejob` 一定在 handler 之前执行 
+            //✅ __handler 跑时拿到 ECHILD__（zombie 已被 waitpid 抢）—— while 不进
+
+            if (waitpid(pid, &status, 0) < 0)
+            {
+                unix_error("waitfg: waitpid error");
+            }
+
+            /* 前台任务: waitpid 抢在 handler 之前 reap 了子进程,
+             * 这里必须自己 deletejob, 否则 jobs 列表残留 */
+            deletejob(jobs, pid);
+        }
     }
     return;
 }
@@ -264,15 +313,22 @@ int parseline(const char *cmdline, char **argv)
  */
 int builtin_cmd(char **argv)
 {
-    //argv�������в�������  argv[0]��������  argv[1]�ǵ�һ������  argv[2]�ǵڶ�������  ...  argv[argc]��NULL        
-    if(strcmp(argv[0],"quit")==0){
+    // argv是命令行参数数组  argv[0]是命令名  argv[1]是第一个参数  argv[2]是第二个参数  ...  argv[argc]是NULL
+    if (strcmp(argv[0], "quit") == 0)
+    { // 退出shell
         exit(0);
     }
-    else if(strcmp(argv[0],"jobs")==0){
-        listjobs(jobs);
+    if (strcmp(argv[0], "&") == 0)
+    {
         return 1;
     }
-    else if(strcmp(argv[0],"bg")==0||strcmp(argv[0],"fg")==0){
+    if (strcmp(argv[0], "jobs") == 0)
+    {
+        listjobs(jobs);
+        return 1; // ★ 别漏了，告诉 eval "这是内建，别 fork"
+    }
+    if (strcmp(argv[0], "bg") == 0 || strcmp(argv[0], "fg") == 0)
+    {
         do_bgfg(argv);
         return 1;
     }
@@ -284,6 +340,54 @@ int builtin_cmd(char **argv)
  */
 void do_bgfg(char **argv)
 {
+    struct job_t *job;
+    pid_t pid;
+    int jid;
+
+    if(argv[1] == NULL)
+    {
+        printf("%s command requires PID or %%jobid argument\n", argv[0]);
+        return;
+    }
+
+    if(argv[1][0] == '%')
+    {
+        jid = atoi(argv[1][1]);
+        job = getjobjid(jobs, jid);
+        if(job == NULL)
+        {
+            printf("%s: job %d not found\n", argv[0], jid);
+            return;
+        }
+    }
+    else if(isdigit(argv[1][0]))
+    {
+        pid = atoi(argv[1]);
+        job = getjobpid(jobs, pid);
+        if(job==NULL)
+        {
+            printf("%s: job %d not found\n", argv[0], pid);
+            return;
+        }
+    }
+    else
+    {
+        printf("%s: invalid argument\n", argv[0]);
+        return;
+    }
+
+    kill(-(job->jid), SIGCONT);
+
+    if(strcmp(argv[0], "fg") == 0)
+    {
+        job->state = FG;
+        waitfg(job->pid);
+    }
+    else
+    {
+        job->state = BG;
+        printf("[%d] (%d) %s", job->jid, pid, job->cmdline);
+    }
     return;
 }
 
@@ -292,6 +396,12 @@ void do_bgfg(char **argv)
  */
 void waitfg(pid_t pid)
 {
+    sigset_t mask;
+    sigemptyset(&mask);
+    while(fgpid(jobs) == pid)
+    {
+        sigsuspend(&mask);
+    }
     return;
 }
 
@@ -308,6 +418,32 @@ void waitfg(pid_t pid)
  */
 void sigchld_handler(int sig)
 {
+    int olderrno = errno;
+    int status;
+    pid_t pid;
+
+    printf("sigchld_handler entered, sig=%d\n", sig);
+    while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0)//等待所有子进程结束 ，WNOHANG | WUNTRACED 表示不阻塞等待，立即返回
+    {
+        if (WIFEXITED(status)) // 子进程正常退出
+        {
+            printf("Jobaped pid=%d status=%d\n", pid, status);
+            deletejob(jobs, pid); // 从作业列表中删除
+        }
+        else if (WIFSIGNALED(status)) // 子进程被信号终止
+        {
+            struct job_t *job = getjobpid(jobs, pid); // 获取作业列表中的子进程
+            printf("Job [%d] (%d) terminated by signal %d\n", job->jid, pid, WTERMSIG(status));
+            deletejob(jobs, pid); // 从作业列表中删除
+        }
+        else if (WIFSTOPPED(status)) // 子进程被信号停止
+        {
+            struct job_t *job = getjobpid(jobs, pid);
+            printf("Job [%d] (%d) stopped by signal %d\n", job->jid, pid, WSTOPSIG(status));
+            job->state = ST; // 子进程被信号停止
+        }
+    }
+    errno = olderrno;
     return;
 }
 
@@ -318,6 +454,14 @@ void sigchld_handler(int sig)
  */
 void sigint_handler(int sig)
 {
+    int olderrno = errno;
+    pid_t pid;
+    pid = fgpid(jobs);
+    if(pid != 0)
+    {
+        kill(-pid, SIGINT);
+    }
+    errno = olderrno;
     return;
 }
 
@@ -328,6 +472,14 @@ void sigint_handler(int sig)
  */
 void sigtstp_handler(int sig)
 {
+    int olderrno = errno;
+    pid_t pid;
+    pid = fgpid(jobs);
+    if(pid != 0)
+    {
+        kill(-pid, SIGTSTP);
+    }
+    errno = olderrno;
     return;
 }
 

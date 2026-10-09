@@ -21,14 +21,14 @@ int main(int argc, char **argv)
 	fprintf(stderr, "Usage: %s <n>\n", argv[0]);
 	exit(0);
     }
-    secs = atoi(argv[1]);
+    secs = atoi(argv[1]);//将命令行参数转换为整数
 
-    for (i=0; i < secs; i++)
-       sleep(1);
+    for (i=0; i < secs; i++)//循环secs次
+       sleep(1);//每次循环1秒
 	
     pid = getpid(); 
 
-    if (kill(-pid, SIGTSTP) < 0)
+    if (kill(-pid, SIGTSTP) < 0)//发送SIGTSTP信号给进程组
        fprintf(stderr, "kill (tstp) error");
 
     exit(0);

@@ -226,15 +226,28 @@ void eval(char *cmdline)
         else
         {
             int status;
-            //__Linux 实际行：waitpid 拿到 zombie 立即返回 
-            //→ handler 后跑 ✅ __所以你的代码不会出问题__
-            //——`deletejob` 一定在 handler 之前执行 
-            //✅ __handler 跑时拿到 ECHILD__（zombie 已被 waitpid 抢）—— while 不进
+            //__Linux 实际行：waitpid 拿到 zombie 立即返回
+            // → handler 后跑 ✅ __所以你的代码不会出问题__
+            // ——`deletejob` 一定在 handler 之前执行
+            // ✅ __handler 跑时拿到 ECHILD__（zombie 已被 waitpid 抢）—— while 不进
 
-            if (waitpid(pid, &status, 0) < 0)
+            waitpid(pid, &status, 0); // 不需要 < 0 检查，因为 SA_RESTART 保证不返回 EINTR
+
+            if (WIFSIGNALED(status))
             {
-                unix_error("waitfg: waitpid error");
+                struct job_t *job = getjobpid(jobs, pid);
+                printf("Job [%d] (%d) terminated by signal %d\n",
+                       job->jid, pid, WTERMSIG(status));
             }
+            else if (WIFSTOPPED(status))
+            {
+                struct job_t *job = getjobpid(jobs, pid);
+                printf("Job [%d] (%d) stopped by signal %d\n",
+                       job->jid, pid, WSTOPSIG(status));
+                job->state = ST;
+                // 不 deletejob, 停止的 job 保留
+                // 不 return, 让 eval 正常返回
+            } //
 
             /* 前台任务: waitpid 抢在 handler 之前 reap 了子进程,
              * 这里必须自己 deletejob, 否则 jobs 列表残留 */
@@ -344,27 +357,27 @@ void do_bgfg(char **argv)
     pid_t pid;
     int jid;
 
-    if(argv[1] == NULL)
+    if (argv[1] == NULL)
     {
         printf("%s command requires PID or %%jobid argument\n", argv[0]);
         return;
     }
 
-    if(argv[1][0] == '%')
+    if (argv[1][0] == '%')
     {
         jid = atoi(argv[1][1]);
         job = getjobjid(jobs, jid);
-        if(job == NULL)
+        if (job == NULL)
         {
             printf("%s: job %d not found\n", argv[0], jid);
             return;
         }
     }
-    else if(isdigit(argv[1][0]))
+    else if (isdigit(argv[1][0]))
     {
         pid = atoi(argv[1]);
         job = getjobpid(jobs, pid);
-        if(job==NULL)
+        if (job == NULL)
         {
             printf("%s: job %d not found\n", argv[0], pid);
             return;
@@ -378,7 +391,7 @@ void do_bgfg(char **argv)
 
     kill(-(job->jid), SIGCONT);
 
-    if(strcmp(argv[0], "fg") == 0)
+    if (strcmp(argv[0], "fg") == 0)
     {
         job->state = FG;
         waitfg(job->pid);
@@ -398,7 +411,7 @@ void waitfg(pid_t pid)
 {
     sigset_t mask;
     sigemptyset(&mask);
-    while(fgpid(jobs) == pid)
+    while (fgpid(jobs) == pid)
     {
         sigsuspend(&mask);
     }
@@ -422,8 +435,8 @@ void sigchld_handler(int sig)
     int status;
     pid_t pid;
 
-    printf("sigchld_handler entered, sig=%d\n", sig);
-    while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0)//等待所有子进程结束 ，WNOHANG | WUNTRACED 表示不阻塞等待，立即返回
+    // printf("sigchld_handler entered, sig=%d\n", sig);
+    while ((pid = waitpid(-1, &status, WNOHANG | WUNTRACED)) > 0) // 等待所有子进程结束 ，WNOHANG | WUNTRACED 表示不阻塞等待，立即返回
     {
         if (WIFEXITED(status)) // 子进程正常退出
         {
@@ -454,12 +467,13 @@ void sigchld_handler(int sig)
  */
 void sigint_handler(int sig)
 {
+    // printf("sigint_handler entered, sig=%d\n", sig);
     int olderrno = errno;
     pid_t pid;
     pid = fgpid(jobs);
-    if(pid != 0)
+    if (pid != 0)
     {
-        kill(-pid, SIGINT);
+        kill(-pid, SIGINT); // 发送SIGINT信号给pid进程组
     }
     errno = olderrno;
     return;
@@ -475,7 +489,7 @@ void sigtstp_handler(int sig)
     int olderrno = errno;
     pid_t pid;
     pid = fgpid(jobs);
-    if(pid != 0)
+    if (pid != 0)
     {
         kill(-pid, SIGTSTP);
     }
